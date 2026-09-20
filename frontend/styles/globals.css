@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe6ff;
+  --color-brand-600: #3646b8;
+  --color-brand-700: #2b3a9c;
+  --color-brand-900: #1b2566;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: #f7f8fb;
+  color: #17181d; /* 15.9:1 on the page background */
+}
+
+/* A visible focus ring everywhere, including for mouse users who then tab. */
+:focus-visible {
+  outline: 3px solid var(--color-brand-600);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+ins {
+  background-color: #dcfce7;
+  color: #14532d;
+  text-decoration: underline;
+}
+
+del {
+  background-color: #fee2e2;
+  color: #7f1d1d;
+  text-decoration: line-through;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

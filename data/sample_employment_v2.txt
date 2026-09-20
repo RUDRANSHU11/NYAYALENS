@@ -1,0 +1,39 @@
+EMPLOYMENT AGREEMENT
+
+This Employment Agreement ("Agreement") is made on 1 April 2026 between Horizon Technologies Private Limited ("the Company") and Ananya Rao ("the Employee").
+
+1. APPOINTMENT
+The Company appoints the Employee as a Software Engineer at its Pune office. The Employee shall report to the Engineering Manager and shall perform the duties reasonably assigned to that role.
+
+2. COMPENSATION
+The Company shall pay the Employee a gross salary of Rs. 10,80,000 per annum, payable monthly in arrears on or before the 7th day of each month. The salary shall be reviewed once in every 18 months.
+
+3. PROBATION
+The Employee shall be on probation for 6 months from the date of joining. The Company may extend the probation period by a further 3 months by written notice.
+
+4. NOTICE PERIOD
+Either party may terminate this Agreement by giving 60 days written notice to the other party.
+
+5. TERMINATION
+The Company may terminate this Agreement without notice if the Employee commits misconduct, breaches confidentiality, or remains absent without approval for more than 3 consecutive days.
+
+6. CONFIDENTIALITY
+The Employee shall not disclose any confidential information or proprietary information of the Company to any third party during employment and for 3 years after this Agreement ends.
+
+7. INTELLECTUAL PROPERTY
+All work product created by the Employee in the course of employment shall be the exclusive intellectual property of the Company, including any copyright in it.
+
+8. LEAVE
+The Employee is entitled to 18 days of paid leave in each calendar year. Unused leave may be carried forward to the next calendar year.
+
+9. DISPUTE RESOLUTION
+Any dispute arising out of this Agreement shall be referred to arbitration at Pune in accordance with the Arbitration and Conciliation Act, 1996.
+
+10. GOVERNING LAW
+This Agreement shall be governed by the laws of India and the courts at Pune shall have exclusive jurisdiction over any dispute.
+
+11. NON-COMPETE
+For 12 months after this Agreement ends, the Employee shall not be employed by, or provide services to, any business that competes with the Company within India.
+
+12. PENALTY FOR EARLY EXIT
+If the Employee resigns within 12 months of joining, the Employee shall pay the Company liquidated damages of Rs. 1,00,000 towards training costs.
