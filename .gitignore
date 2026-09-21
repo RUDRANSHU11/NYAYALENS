@@ -11,3 +11,8 @@ node_modules/
 out/
 frontend/.env.local
 *.tsbuildinfo
+
+.vercel
+.env*
+!.env.example
+!.env.local.example

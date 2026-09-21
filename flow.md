@@ -177,12 +177,16 @@ python -m pytest -q
 cd frontend && npm run typecheck
 ```
 
-Deploy: frontend to Vercel (`NEXT_PUBLIC_API_URL` → the API), backend to Render/Railway with the
-`.env` values; the first request downloads the embedding model (~130 MB) unless `EMBEDDINGS=hash`.
+Deploy: `vercel deploy` from the repo root. `vercel.json` ships both tiers as one project
+(Services): Next.js at `/`, FastAPI at `/api/*`, same origin. Set `LLM_API_KEY` in the Vercel
+project's env vars to turn the AI features on. A cold instance downloads the embedding model into
+`/tmp` on its first request unless `EMBEDDINGS=hash`.
 
 ---
 
 ## 8. Current state
+
+**Live:** https://nyayalens-pied.vercel.app (no `LLM_API_KEY` set yet, so AI text is off).
 
 **Works:** upload (PDF/DOCX/TXT), clause chunking with page/section/clause references, 14-category
 clause flagging, local embeddings + FAISS retrieval, grounded Q&A with citations, per-clause

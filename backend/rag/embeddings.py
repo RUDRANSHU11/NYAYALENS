@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
+import tempfile
 import threading
 
 import numpy as np
@@ -41,6 +43,9 @@ def _load() -> None:
         if _backend:
             return
         if config.EMBEDDINGS == "fastembed":
+            # Serverless hosts (Vercel) only allow writes under the temp dir, and
+            # the Hugging Face downloader caches under ~/.cache by default.
+            os.environ.setdefault("HF_HOME", os.path.join(tempfile.gettempdir(), "huggingface"))
             try:
                 from fastembed import TextEmbedding
 

@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 
-const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Same logic as services/api.ts: same origin when deployed, local API in dev.
+const api =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === "development" ? "http://localhost:8000" : "");
 
 // Locked down as far as Next.js allows: its runtime needs inline scripts, so
 // script-src keeps 'unsafe-inline', but nothing else is loosened and the page
@@ -14,7 +17,7 @@ const csp = [
   "img-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
-  `connect-src 'self' ${api}`,
+  `connect-src 'self'${api ? ` ${api}` : ""}`,
 ].join("; ");
 
 const nextConfig = {

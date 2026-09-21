@@ -1,0 +1,15 @@
+# Never upload local secrets or environments.
+.env*
+.venv/
+
+# Build output and caches - Vercel rebuilds these.
+frontend/node_modules/
+frontend/.next/
+**/__pycache__/
+.pytest_cache/
+*.tsbuildinfo
+
+# Not needed at runtime.
+.claude/
+tests/
+conftest.py

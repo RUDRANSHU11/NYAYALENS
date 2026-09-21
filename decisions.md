@@ -172,3 +172,32 @@ is as substantive as duty, so removing a permission is a change worth surfacing.
 
 **Alternatives.** Keeping the test aligned with the narrower regex would have been the smaller
 change — and would have shipped a comparison engine that misses removed rights.
+
+---
+
+## 2026-09-21 — Both tiers deploy as one Vercel project (Services)
+
+**Decision.** `vercel.json` defines two services — Next.js (`frontend/`) and FastAPI
+(`backend.main:app`, root `.`) — with public rewrites `/api/*` → backend and everything else →
+frontend. In production the frontend calls its own origin; `next dev` still targets
+`localhost:8000`. `.python-version` pins 3.12 (the version the suite runs on) and `.vercelignore`
+keeps `.env`, `.venv` and build output out of the upload.
+
+**Why.** One URL for the reference, no CORS (same origin), and frontend and backend ship
+atomically, so they can never be out of step. The brief lists Render/Railway for the backend, but
+Vercel runs FastAPI natively — a second platform and account would buy nothing.
+
+**Trade-off.** The document store is in-process. Fluid Compute reuses warm instances, so an
+upload followed by questions in one sitting normally lands on the same instance — but a cold start
+or scale-out drops the document, and the user gets the existing "please upload it again" message.
+If that starts to matter, move `rag/store.py` to a shared store (Redis). The first request on a
+cold instance also downloads the embedding model into `/tmp`, so it is a few seconds slower.
+Measured on the live deployment: 15/15 and 6/6 questions answered on warm instances; a document
+went missing only right after a cold start.
+
+**Found on first deploy.** It silently ran on the hashing fallback: Hugging Face caches under
+`~/.cache`, which is read-only on Vercel. `rag/embeddings.py` now points `HF_HOME` at the temp
+dir. The fallback did its job; `/api/health` reporting `embeddings: hash` is what gave it away.
+
+**Alternatives.** Two Vercel projects (frontend + API) — two URLs, CORS and an API-URL env var to
+keep in sync, and the two can drift. Render for the backend — a second platform for no gain.

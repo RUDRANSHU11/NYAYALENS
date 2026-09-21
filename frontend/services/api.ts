@@ -1,7 +1,12 @@
 /** Typed client for the NyayaLens API. The browser never talks to a model
  *  provider directly - the API key stays on the server. */
 
-const BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// Deployed, the API is the same origin (Vercel routes /api/* to the backend
+// service); in `next dev` it is the local FastAPI server.
+const BASE = (
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === "development" ? "http://localhost:8000" : "")
+).replace(/\/$/, "");
 
 export type Language = "en" | "hi";
 

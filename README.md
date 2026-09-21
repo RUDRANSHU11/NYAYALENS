@@ -8,6 +8,8 @@ you exactly which clause and page each answer came from.
 
 > Understand the document. Compare the changes. Find what matters.
 
+**Live:** https://nyayalens-pied.vercel.app
+
 ---
 
 ## What it does
@@ -67,7 +69,7 @@ choices is in [decisions.md](decisions.md).
 - **Backend:** Python 3.12, FastAPI, Pydantic
 - **AI/ML:** any OpenAI-compatible LLM (Gemini by default), fastembed ONNX embeddings, FAISS, RAG
 - **Document processing:** PyMuPDF, python-docx, model-vision OCR for scans
-- **Deployment:** frontend on Vercel, backend on Render/Railway/any container host
+- **Deployment:** one Vercel project — Next.js and FastAPI as Vercel Services, same origin ([`vercel.json`](vercel.json))
 
 ---
 
