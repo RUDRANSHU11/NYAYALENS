@@ -1,0 +1,3 @@
+# Test tooling - kept out of requirements.txt so it never ships in the deploy bundle.
+-r requirements.txt
+pytest>=8.0

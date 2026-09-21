@@ -10,7 +10,24 @@ def test_health_reports_capabilities(client):
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
     assert body["ai_enabled"] is False  # no key in the test environment
-    assert body["embeddings"] in ("hash", "fastembed")
+    assert body["embeddings"].startswith(("hash", "fastembed"))
+
+
+def test_health_does_not_load_the_embedding_model(client, monkeypatch):
+    from backend.rag import embeddings
+
+    monkeypatch.setattr(embeddings, "_backend", None)
+    body = client.get("/api/health").json()
+
+    assert embeddings._backend is None  # a health probe must never trigger the download
+    assert "loads on first upload" in body["embeddings"]
+
+
+def test_large_responses_are_gzip_compressed(client, contract_v1):
+    response = client.post(
+        "/api/documents", files={"file": ("contract.txt", contract_v1, "text/plain")}
+    )
+    assert response.headers.get("content-encoding") == "gzip"
 
 
 def test_index_carries_the_disclaimer(client):
@@ -95,6 +112,27 @@ def test_ask_with_ai_returns_answer_and_marks_citations(client, contract_v1, ai)
     assert "30 days" in body["answer"]
     assert sum(source["cited"] for source in body["sources"]) == 1
     assert "<document_extract>" in ai[-1]  # context was actually sent
+
+
+def test_repeated_question_is_served_from_cache(client, contract_v1, ai):
+    document_id = upload(client, contract_v1)["id"]
+    url = f"/api/documents/{document_id}/ask"
+
+    first = client.post(url, json={"question": "How much notice do I give?"}).json()
+    calls = len(ai)
+    again = client.post(url, json={"question": "  how much NOTICE do I give? "}).json()
+
+    assert len(ai) == calls  # no second model call for the same question
+    assert again == first
+
+
+def test_failed_answers_are_not_cached(client, contract_v1):
+    document_id = upload(client, contract_v1)["id"]
+    client.post(f"/api/documents/{document_id}/ask", json={"question": "Notice period?"})
+
+    from backend.rag import store
+
+    assert store.get(document_id).answers == {}  # no AI configured -> nothing cached
 
 
 def test_ask_validates_the_question(client, contract_v1):

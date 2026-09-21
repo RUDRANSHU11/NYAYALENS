@@ -19,6 +19,8 @@ from backend import config
 from backend.document_processing.chunking import Chunk
 from backend.rag import embeddings
 
+MAX_CACHED_ANSWERS = 100
+
 
 @dataclass
 class StoredDocument:
@@ -29,23 +31,42 @@ class StoredDocument:
     index: faiss.Index
     created_at: float
     ocr_used: bool = False
+    # chunk id -> important-clause categories, computed once at upload.
+    flags: dict[str, list[str]] = field(default_factory=dict)
     # (chunk_id, language) -> generated explanation, so we never pay for the same
     # clause twice while the document is alive.
     explanations: dict[tuple[str, str], dict] = field(default_factory=dict)
+    # (normalised question, language) -> answer. Bounded: oldest entry dropped first.
+    answers: dict[tuple[str, str], object] = field(default_factory=dict)
+    _by_id: dict[str, Chunk] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._by_id = {chunk.id: chunk for chunk in self.chunks}
 
     @property
     def expires_in(self) -> int:
         return max(0, int(self.created_at + config.DOC_TTL_SECONDS - time.time()))
 
     def chunk(self, chunk_id: str) -> Chunk | None:
-        return next((chunk for chunk in self.chunks if chunk.id == chunk_id), None)
+        return self._by_id.get(chunk_id)
+
+    def remember_answer(self, key: tuple[str, str], answer: object) -> None:
+        if len(self.answers) >= MAX_CACHED_ANSWERS:
+            self.answers.pop(next(iter(self.answers)), None)
+        self.answers[key] = answer
 
 
 _documents: "OrderedDict[str, StoredDocument]" = OrderedDict()
 _lock = threading.Lock()
 
 
-def add(name: str, pages: int, chunks: list[Chunk], ocr_used: bool = False) -> StoredDocument:
+def add(
+    name: str,
+    pages: int,
+    chunks: list[Chunk],
+    ocr_used: bool = False,
+    flags: dict[str, list[str]] | None = None,
+) -> StoredDocument:
     """Embed ``chunks``, index them and keep the document for its TTL."""
     if not chunks:
         raise ValueError("cannot store a document with no chunks")
@@ -62,6 +83,7 @@ def add(name: str, pages: int, chunks: list[Chunk], ocr_used: bool = False) -> S
         index=index,
         created_at=time.time(),
         ocr_used=ocr_used,
+        flags=flags or {},
     )
     with _lock:
         _purge_expired()

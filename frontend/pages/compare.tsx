@@ -125,7 +125,7 @@ export default function ComparePage() {
                   <li key={change.id}>
                     <article
                       aria-labelledby={`change-${change.id}`}
-                      className="rounded-xl border border-slate-200 bg-white p-4"
+                      className="lazy-card rounded-xl border border-slate-200 bg-white p-4"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <span

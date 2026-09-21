@@ -25,6 +25,13 @@ body {
   border-radius: 2px;
 }
 
+/* Long documents render hundreds of cards: let the browser skip layout and paint
+   for the ones off screen. Content stays in the accessibility tree and find-in-page. */
+.lazy-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 12rem;
+}
+
 ins {
   background-color: #dcfce7;
   color: #14532d;

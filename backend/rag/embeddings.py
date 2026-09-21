@@ -29,10 +29,10 @@ _model = None
 _backend: str | None = None
 
 
-def backend_name() -> str:
-    """Which embedding backend is live: ``fastembed`` or ``hash``."""
-    _load()
-    return _backend or "hash"
+def status() -> str:
+    """The live embedding backend, without forcing a model load: a health check
+    must stay cheap even on a cold instance."""
+    return _backend or f"{config.EMBEDDINGS} (loads on first upload)"
 
 
 def _load() -> None:

@@ -109,7 +109,7 @@ export default function ClauseList({ document: doc, language }: Props) {
             <li key={clause.id}>
               <article
                 aria-labelledby={`clause-${clause.id}`}
-                className="rounded-xl border border-slate-200 bg-white p-4"
+                className="lazy-card rounded-xl border border-slate-200 bg-white p-4"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <h3

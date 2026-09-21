@@ -7,6 +7,8 @@ the instructions.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from backend.document_processing.chunking import Chunk
 from backend.services import llm
 from backend.services.compare import Change
@@ -28,6 +30,7 @@ _GUARDRAILS = (
 
 _MAX_CHANGE_CHARS = 600
 _MAX_CHANGES_EXPLAINED = 8
+_OCR_WORKERS = 4
 
 
 def language_name(language: str) -> str:
@@ -130,24 +133,27 @@ def explain_changes(changes: list[Change], language: str = "en") -> dict[str, st
 
 
 def ocr_pages(images: list[bytes]) -> list[str]:
-    """Step 2 fallback: read a scanned page with the model's vision capability."""
+    """Step 2 fallback: read scanned pages with the model's vision capability.
+
+    Pages are independent network calls, so they run concurrently (bounded, to
+    stay inside provider rate limits); ``map`` keeps them in page order.
+    """
     system = (
         "You are an OCR engine. Transcribe the text in the image exactly, preserving line "
         "breaks, clause numbers and headings. Output the text only, with no commentary."
     )
-    pages: list[str] = []
-    for image in images:
-        content = [
-            {"type": "text", "text": "Transcribe this page."},
-            llm.image_part(image),
-        ]
-        pages.append(
-            llm.complete(
-                [{"role": "system", "content": system}, {"role": "user", "content": content}],
-                max_tokens=2000,
-            )
+
+    def read(image: bytes) -> str:
+        content = [{"type": "text", "text": "Transcribe this page."}, llm.image_part(image)]
+        return llm.complete(
+            [{"role": "system", "content": system}, {"role": "user", "content": content}],
+            max_tokens=2000,
         )
-    return pages
+
+    if not images:
+        return []
+    with ThreadPoolExecutor(max_workers=min(_OCR_WORKERS, len(images))) as pool:
+        return list(pool.map(read, images))
 
 
 def _string_list(value: object) -> list[str]:

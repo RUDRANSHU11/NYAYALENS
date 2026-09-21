@@ -9,6 +9,7 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from backend import __version__, config
@@ -46,6 +47,8 @@ app.add_middleware(
     allow_headers=["Content-Type"],
     allow_credentials=False,  # no cookies, no sessions - the doc id is the only handle
 )
+# A long contract's clause list is tens of KB of repetitive JSON; it compresses ~5x.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.middleware("http")

@@ -65,6 +65,21 @@ def test_store_is_capped(monkeypatch):
     assert store.count() == 2
 
 
+def test_answer_cache_is_bounded(monkeypatch):
+    monkeypatch.setattr(store, "MAX_CACHED_ANSWERS", 2)
+    document = store.add("contract.txt", 0, sample_chunks())
+    for number in range(3):
+        document.remember_answer((f"q{number}", "en"), number)
+
+    assert list(document.answers) == [("q1", "en"), ("q2", "en")]  # oldest dropped
+
+
+def test_clause_flags_are_stored_once_at_upload():
+    flags = {"c0": ["Termination"]}
+    document = store.add("contract.txt", 0, sample_chunks(), flags=flags)
+    assert store.get(document.id).flags == flags
+
+
 def test_chunk_lookup_by_id():
     document = store.add("contract.txt", 0, sample_chunks())
     assert document.chunk("c2").clause == "6"

@@ -201,3 +201,23 @@ dir. The fallback did its job; `/api/health` reporting `embeddings: hash` is wha
 
 **Alternatives.** Two Vercel projects (frontend + API) — two URLs, CORS and an API-URL env var to
 keep in sync, and the two can drift. Render for the backend — a second platform for no gain.
+
+---
+
+## 2026-09-22 — Efficiency pass after the first evaluation
+
+**Decision.** Clause flags are computed once at upload and stored; clause lookup by id is a dict;
+answers are cached per document by normalised question and language (bounded, oldest dropped,
+failures never cached); scanned pages are OCR'd concurrently through a 4-worker pool; the health
+check reports the embedding backend without loading it; JSON over 1 KB is gzipped; long card lists
+use `content-visibility: auto`; `pytest` moved to `requirements-dev.txt`.
+
+**Why.** The evaluation scored Efficiency 85 against 100 everywhere else. Each change removes work
+that was genuinely being repeated or serialised: 14 regexes over every clause on every GET, a
+linear scan per explanation, a second model call for a repeated question, OCR pages waiting on each
+other's network round-trips, a health probe that could trigger a ~130 MB model download, and test
+tooling shipped to production.
+
+**Alternatives rejected.** Loading the embedding model eagerly at startup: on serverless every cold
+start would pay for it, including requests that never embed anything (compare, health). Streaming
+answers token by token: a real UX win, but a protocol change on both tiers for a hackathon build.

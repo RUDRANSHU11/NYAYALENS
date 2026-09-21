@@ -100,10 +100,11 @@ App: <http://localhost:3000>
 ### Tests
 
 ```bash
+pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-76 tests, no network calls: the suite pins hashing embeddings and stubs the model provider, so
+84 tests, no network calls: the suite pins hashing embeddings and stubs the model provider, so
 every "no AI configured" branch is covered too.
 
 ---
@@ -121,6 +122,25 @@ LLM_MODEL=gemini-2.5-flash
 
 Limits worth knowing (all in `.env.example`): `MAX_UPLOAD_MB=10`, `MAX_PAGES=120`,
 `DOC_TTL_MINUTES=30`, `RATE_LIMIT_PER_MINUTE=30`.
+
+---
+
+## Efficiency
+
+- **Nothing loads until it is needed.** PDF/DOCX parsers and the embedding model load lazily, and
+  the health check never triggers a model download.
+- **Indexing is paid once.** Chunks are embedded locally at upload (no per-request API cost) and
+  searched with exact FAISS inner product; clause flags are computed once and stored; clause
+  lookups by id are O(1).
+- **The model is called sparingly.** Only retrieved clauses are sent. Explanations and answers are
+  cached per document and language (answers bounded to 100), all change impacts go out in one
+  batched call, and scanned pages are OCR'd concurrently (4 at a time) instead of one by one.
+- **Bounded work everywhere.** Upload size, page count, OCR pages, question length, comparison
+  pairing (40×40) and documents in memory all have hard caps.
+- **Small, fast responses.** JSON over 1 KB is gzip-compressed, both pages are statically
+  prerendered, and long clause lists use `content-visibility: auto` so off-screen cards are not
+  laid out.
+- **Lean deploy.** Test tooling lives in `requirements-dev.txt`, not in the production bundle.
 
 ---
 

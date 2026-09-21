@@ -26,7 +26,7 @@ the same contract and reports what changed.
 | Embeddings | fastembed (ONNX `bge-small-en-v1.5`) | local vectors, no API key; hashing fallback |
 | Vector index | FAISS `IndexFlatIP` | exact cosine search over one document |
 | LLM | any OpenAI-compatible endpoint (Gemini default) | explanations, answers, change impact, OCR |
-| Tests | pytest + FastAPI TestClient | 76 tests, no network |
+| Tests | pytest + FastAPI TestClient | 84 tests, no network |
 
 ---
 
@@ -59,7 +59,7 @@ nyayalens/
 │   └── styles/globals.css          Tailwind import, theme tokens, focus/ins/del styles
 ├── data/                           two sample contract versions for demos and tests
 ├── tests/                          pytest suite (conftest.py is at the repo root)
-└── requirements.txt / .env.example
+└── requirements.txt (runtime) / requirements-dev.txt (+ pytest) / .env.example
 ```
 
 ---
@@ -102,7 +102,9 @@ nyayalens/
    chunks from FAISS.
 3. [`analysis.answer_question`](backend/services/analysis.py:63) numbers those chunks, asks for an
    answer plus citation numbers, and maps the numbers back to chunk ids.
-4. The response always carries `sources`; if the model is off or fails, `ai_used=false`, `notice`
+4. Real answers are cached per `(normalised question, language)`, bounded to 100 per document,
+   so a repeated question skips retrieval and the model entirely.
+5. The response always carries `sources`; if the model is off or fails, `ai_used=false`, `notice`
    explains why, and the retrieved clauses still answer "where is this in my document?".
 
 ### D. Compare two versions (`POST /api/compare`)
@@ -132,7 +134,9 @@ StoredDocument
   chunks        list[Chunk(id, text, page, section, clause)]
   index         faiss.IndexFlatIP, one row per chunk, same order
   created_at    drives expiry (DOC_TTL_SECONDS) and FIFO eviction (MAX_DOCS)
+  flags         {chunk_id: [categories]}, computed once at upload
   explanations  {(chunk_id, language): explanation}
+  answers       {(normalised question, language): AnswerOut}, max 100, oldest dropped
 ```
 
 `Chunk.reference` (`"Clause 5.2 · Page 3"`) is the single source of truth for citations — the UI
@@ -166,7 +170,7 @@ never builds its own.
 
 ```bash
 # backend
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime deps + pytest
 uvicorn backend.main:app --reload --port 8000
 
 # frontend
@@ -191,7 +195,7 @@ project's env vars to turn the AI features on. A cold instance downloads the emb
 **Works:** upload (PDF/DOCX/TXT), clause chunking with page/section/clause references, 14-category
 clause flagging, local embeddings + FAISS retrieval, grounded Q&A with citations, per-clause
 plain-language explanation (English/Hindi), two-version comparison with value and obligation
-changes, OCR for scanned PDFs, TTL + manual delete, rate limiting, 76 passing tests.
+changes, OCR for scanned PDFs, TTL + manual delete, rate limiting, 84 passing tests.
 
 **Stubbed / deliberate limits:** in-process store and rate limiter (single instance only);
 comparison pairing is capped at 40×40 clauses per changed block; OCR covers the first

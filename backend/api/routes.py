@@ -48,7 +48,7 @@ def health() -> HealthOut:
         status="ok",
         ai_enabled=llm.is_configured(),
         model=config.LLM_MODEL if llm.is_configured() else None,
-        embeddings=embeddings.backend_name(),
+        embeddings=embeddings.status(),
         documents_in_memory=store.count(),
         document_ttl_minutes=config.DOC_TTL_SECONDS // 60,
     )
@@ -60,7 +60,9 @@ def upload_document(request: Request, file: UploadFile = File(...)) -> DocumentO
     ratelimit.check(request)
     name = _safe_name(file.filename)
     chunks, pages, ocr_used = _prepare(name, _read_upload(request, file))
-    document = store.add(name=name, pages=pages, chunks=chunks, ocr_used=ocr_used)
+    document = store.add(
+        name=name, pages=pages, chunks=chunks, ocr_used=ocr_used, flags=clauses.flag(chunks)
+    )
     return _document_payload(document)
 
 
@@ -111,6 +113,13 @@ def ask_document(request: Request, document_id: str, payload: AskRequest) -> Ans
     """Features 4-5: retrieve relevant clauses, then answer from them with citations."""
     ratelimit.check(request)
     document = _require(document_id)
+
+    # A repeated question skips both retrieval and the model call.
+    cache_key = (" ".join(payload.question.lower().split()), payload.language)
+    cached = document.answers.get(cache_key)
+    if cached is not None:
+        return cached
+
     contexts = store.search(document, payload.question)
 
     answer, grounded, ai_used, notice, cited = "", False, False, None, []
@@ -129,7 +138,7 @@ def ask_document(request: Request, document_id: str, payload: AskRequest) -> Ans
             log.warning("answer generation failed: %s", exc)
             notice = f"{exc} The most relevant clauses are shown below."
 
-    return AnswerOut(
+    response = AnswerOut(
         answer=answer,
         grounded=grounded,
         ai_used=ai_used,
@@ -149,6 +158,9 @@ def ask_document(request: Request, document_id: str, payload: AskRequest) -> Ans
             for chunk, score in contexts
         ],
     )
+    if ai_used:  # only cache real answers, never a failure notice
+        document.remember_answer(cache_key, response)
+    return response
 
 
 @router.post("/compare", response_model=ComparisonOut)
@@ -232,7 +244,7 @@ def _prepare(name: str, data: bytes) -> tuple[list[Chunk], int, bool]:
 
 
 def _document_payload(document: store.StoredDocument) -> DocumentOut:
-    flags = clauses.flag(document.chunks)
+    flags = document.flags
     return DocumentOut(
         id=document.id,
         name=document.name,
