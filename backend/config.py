@@ -38,8 +38,15 @@ MAX_PAGES = _int("MAX_PAGES", 120)
 OCR_MAX_PAGES = _int("OCR_MAX_PAGES", 10)
 DOC_TTL_SECONDS = _int("DOC_TTL_MINUTES", 30) * 60
 MAX_DOCS = _int("MAX_DOCS", 50)
+# Hard ceiling on what the in-process store may hold, independent of MAX_DOCS.
+MAX_MEMORY_BYTES = _int("MAX_MEMORY_MB", 256) * 1024 * 1024
 RATE_LIMIT_PER_MINUTE = _int("RATE_LIMIT_PER_MINUTE", 30)
 MAX_QUESTION_CHARS = 1000
+
+# --- Shared state ----------------------------------------------------------
+# Set this and documents, caches and rate limits move out of the process, so
+# the API can run on more than one instance. Unset, everything stays local.
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
 
 # --- Retrieval -------------------------------------------------------------
 EMBEDDINGS = os.getenv("EMBEDDINGS", "fastembed")

@@ -26,7 +26,7 @@ the same contract and reports what changed.
 | Embeddings | fastembed (ONNX `bge-small-en-v1.5`) | local vectors, no API key; hashing fallback |
 | Vector index | FAISS `IndexFlatIP` | exact cosine search over one document |
 | LLM | any OpenAI-compatible endpoint (Gemini default) | explanations, answers, change impact, OCR |
-| Tests | pytest + FastAPI TestClient | 86 tests, no network |
+| Tests | pytest + FastAPI TestClient | 94 tests, no network |
 
 ---
 
@@ -46,7 +46,7 @@ nyayalens/
 │   │   └── chunking.py             clause-aware chunking + `Chunk.reference`
 │   ├── rag/
 │   │   ├── embeddings.py           fastembed with a hashing fallback
-│   │   └── store.py                in-memory document registry + FAISS search
+│   │   └── store.py                document store (memory or Redis) + FAISS search
 │   └── services/
 │       ├── clauses.py              rule-based important-clause categories
 │       ├── compare.py              contract comparison engine
@@ -125,8 +125,10 @@ nyayalens/
 
 ## 5. Data model
 
-Nothing is persisted. The only state is `backend/rag/store.py:_documents`, an `OrderedDict`
-guarded by a lock:
+Nothing is persisted to disk. State lives behind the store interface in `backend/rag/store.py`:
+`MemoryBackend` (an `OrderedDict` guarded by a lock, bounded by count *and* bytes) or
+`RedisBackend` (`nyaya:doc:*` and `nyaya:cache:*` keys with the same TTL) when `REDIS_URL` is
+set. Swap them with `store.use_backend(...)`; everything above calls the module functions:
 
 ```
 StoredDocument
@@ -199,7 +201,7 @@ project's env vars to turn the AI features on. A cold instance downloads the emb
 **Works:** upload (PDF/DOCX/TXT), clause chunking with page/section/clause references, 14-category
 clause flagging, local embeddings + FAISS retrieval, grounded Q&A with citations, per-clause
 plain-language explanation (English/Hindi), two-version comparison with value and obligation
-changes, OCR for scanned PDFs, TTL + manual delete, rate limiting, 86 passing tests.
+changes, OCR for scanned PDFs, TTL + manual delete, rate limiting, 94 passing tests.
 
 **Stubbed / deliberate limits:** in-process store and rate limiter (single instance only);
 comparison pairing is capped at 40×40 clauses per changed block; OCR covers the first

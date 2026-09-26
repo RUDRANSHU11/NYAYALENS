@@ -109,7 +109,8 @@ export interface Health {
   ai_enabled: boolean;
   model: string | null;
   embeddings: string;
-  documents_in_memory: number;
+  store: string;
+  documents_stored: number;
   document_ttl_minutes: number;
 }
 

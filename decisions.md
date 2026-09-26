@@ -248,3 +248,27 @@ caches outlive an instance, but it means provisioning a third-party service on t
 which is their call, not ours. *Caching parsed documents by file hash:* would make re-uploads free,
 but it would keep a deleted document's text and vectors in memory after the user pressed "Remove
 document" - the privacy promise is worth more than the saved work.
+
+---
+
+## 2026-09-26 — The store became pluggable, so the API can scale sideways
+
+**Decision.** `rag/store.py` now hides two backends behind one interface: `MemoryBackend`
+(per-process, bounded by document count *and* total bytes) and `RedisBackend` (documents, their
+caches and the rate-limit counters in Redis, same TTL, JSON + raw float32 — never pickle). The
+backend is chosen by whether `REDIS_URL` is set, an unreachable Redis degrades to the local store
+with a warning, and `ratelimit.py` uses the shared counter when one exists. `GET /api/health`
+reports which store is live.
+
+**Why.** This supersedes the trade-off accepted on 2026-09-20. The evaluation named it precisely:
+the in-memory store and rate limiter "restrict the backend to a single instance, preventing
+horizontal scaling without losing state", with a second finding that the store "could lead to
+memory exhaustion if MAX_DOCS or MAX_PAGES limits are set too high". Both are now addressed
+without forcing a dependency on anyone: set one environment variable to scale out, set none and
+the app behaves exactly as before, and the byte budget caps the heap however the limits are
+configured. It also removes the cold-start "please upload again", since a document written by one
+instance is readable by the next.
+
+**Alternatives.** Requiring Redis outright — simpler code, but it breaks "clone it and run it",
+and a hackathon reviewer should not need infrastructure to try the app. Sticky sessions at the
+edge — not available on the deploy target and it only hides the problem.

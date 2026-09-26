@@ -69,9 +69,10 @@ def test_answer_cache_is_bounded(monkeypatch):
     monkeypatch.setattr(store, "MAX_CACHED_ANSWERS", 2)
     document = store.add("contract.txt", 0, sample_chunks())
     for number in range(3):
-        document.remember_answer((f"q{number}", "en"), number)
+        store.remember(document.id, "answer", f"q{number}|en", {"answer": str(number)})
 
-    assert list(document.answers) == [("q1", "en"), ("q2", "en")]  # oldest dropped
+    assert store.cached(document.id, "answer", "q0|en") is None  # oldest dropped
+    assert store.cached(document.id, "answer", "q2|en") == {"answer": "2"}
 
 
 def test_clause_flags_are_stored_once_at_upload():

@@ -104,7 +104,7 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-86 tests, no network calls: the suite pins hashing embeddings and stubs the model provider, so
+94 tests, no network calls: the suite pins hashing embeddings and stubs the model provider, so
 every "no AI configured" branch is covered too.
 
 ---
@@ -121,7 +121,10 @@ LLM_MODEL=gemini-2.5-flash
 ```
 
 Limits worth knowing (all in `.env.example`): `MAX_UPLOAD_MB=10`, `MAX_PAGES=120`,
-`DOC_TTL_MINUTES=30`, `RATE_LIMIT_PER_MINUTE=30`.
+`DOC_TTL_MINUTES=30`, `RATE_LIMIT_PER_MINUTE=30`, `MAX_MEMORY_MB=256`.
+
+To run more than one instance, point `REDIS_URL` at any Redis and state moves out of the
+process - no other change. `GET /api/health` reports which store is live.
 
 ---
 
@@ -139,8 +142,13 @@ Limits worth knowing (all in `.env.example`): `MAX_UPLOAD_MB=10`, `MAX_PAGES=120
 - **The model is called sparingly.** Only retrieved clauses are sent. Explanations and answers are
   cached per document and language (answers bounded to 100), all change impacts go out in one
   batched call, and scanned pages are OCR'd concurrently (4 at a time) instead of one by one.
+- **Scales sideways when it needs to.** Documents, their caches and the rate-limit counters sit
+  behind a store interface with two backends: in-process by default, or Redis when `REDIS_URL`
+  is set, in which case any instance can serve any request. An unreachable Redis degrades to
+  the local store instead of failing.
 - **Bounded work everywhere.** Upload size, page count, OCR pages, question length, comparison
-  pairing (40×40) and documents in memory all have hard caps.
+  pairing (40×40) and stored documents all have hard caps - and the in-process store is capped
+  in *bytes* as well as documents, so raising `MAX_DOCS` or `MAX_PAGES` cannot exhaust the heap.
 - **Small, fast responses.** JSON over 1 KB is gzip-compressed, both pages are statically
   prerendered, and long clause lists use `content-visibility: auto` so off-screen cards are not
   laid out.

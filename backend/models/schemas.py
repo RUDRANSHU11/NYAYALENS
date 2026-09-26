@@ -119,5 +119,6 @@ class HealthOut(BaseModel):
     ai_enabled: bool
     model: str | None = None
     embeddings: str
-    documents_in_memory: int
+    store: str
+    documents_stored: int
     document_ttl_minutes: int

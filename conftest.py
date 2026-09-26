@@ -26,6 +26,7 @@ DATA = Path(__file__).parent / "data"
 
 @pytest.fixture(autouse=True)
 def _clean_state():
+    store.use_backend(store.MemoryBackend())
     store.clear()
     ratelimit.reset()
     yield

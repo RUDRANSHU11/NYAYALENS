@@ -175,7 +175,8 @@ def test_failed_answers_are_not_cached(client, contract_v1):
 
     from backend.rag import store
 
-    assert store.get(document_id).answers == {}  # no AI configured -> nothing cached
+    # no AI configured -> a notice, never a cached answer
+    assert store.cached(document_id, "answer", "notice period?|en") is None
 
 
 def test_ask_validates_the_question(client, contract_v1):

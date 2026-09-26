@@ -52,7 +52,8 @@ async def health() -> HealthOut:
         ai_enabled=llm.is_configured(),
         model=config.LLM_MODEL if llm.is_configured() else None,
         embeddings=embeddings.status(),
-        documents_in_memory=store.count(),
+        store=store.backend_name(),
+        documents_stored=store.count(),
         document_ttl_minutes=config.DOC_TTL_SECONDS // 60,
     )
 
@@ -97,11 +98,11 @@ async def explain_clause(
     if not llm.is_configured():
         raise HTTPException(status_code=503, detail=_NO_AI_NOTICE)
 
-    cache_key = (chunk_id, payload.language)
-    explanation = document.explanations.get(cache_key)
+    cache_key = f"{chunk_id}|{payload.language}"
+    explanation = store.cached(document.id, "explanation", cache_key)
     if explanation is None:
         explanation = await analysis.explain_clause(chunk, payload.language)
-        document.explanations[cache_key] = explanation
+        store.remember(document.id, "explanation", cache_key, explanation)
 
     return ExplanationOut(
         chunk_id=chunk.id,
@@ -118,11 +119,12 @@ async def ask_document(request: Request, document_id: str, payload: AskRequest) 
     ratelimit.check(request)
     document = _require(document_id)
 
-    # A repeated question skips both retrieval and the model call.
-    cache_key = (" ".join(payload.question.lower().split()), payload.language)
-    cached = document.answers.get(cache_key)
+    # A repeated question skips both retrieval and the model call. With Redis
+    # configured the cache is shared, so any instance can serve the repeat.
+    cache_key = f"{' '.join(payload.question.lower().split())}|{payload.language}"
+    cached = store.cached(document.id, "answer", cache_key)
     if cached is not None:
-        return cached
+        return AnswerOut(**cached)
 
     contexts = await run_in_threadpool(store.search, document, payload.question)
 
@@ -165,7 +167,7 @@ async def ask_document(request: Request, document_id: str, payload: AskRequest) 
         ],
     )
     if ai_used:  # only cache real answers, never a failure notice
-        document.remember_answer(cache_key, response)
+        store.remember(document.id, "answer", cache_key, response.model_dump())
     return response
 
 
