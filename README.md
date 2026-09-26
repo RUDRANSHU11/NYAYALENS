@@ -104,7 +104,7 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-84 tests, no network calls: the suite pins hashing embeddings and stubs the model provider, so
+86 tests, no network calls: the suite pins hashing embeddings and stubs the model provider, so
 every "no AI configured" branch is covered too.
 
 ---
@@ -127,8 +127,12 @@ Limits worth knowing (all in `.env.example`): `MAX_UPLOAD_MB=10`, `MAX_PAGES=120
 
 ## Efficiency
 
-- **Nothing loads until it is needed.** PDF/DOCX parsers and the embedding model load lazily, and
-  the health check never triggers a model download.
+- **Non-blocking by default.** Handlers are async, so a model round trip (seconds) never holds a
+  worker thread; parsing, chunking, embedding and diffing are pushed to the threadpool so they
+  never block the event loop. Scanned pages and the two sides of a comparison run concurrently.
+- **Nothing loads until it is needed.** PDF/DOCX parsers and the embedding model load lazily, the
+  health check never triggers a model download, and the model is baked into the build so cold
+  instances do not fetch ~70 MB before their first answer.
 - **Indexing is paid once.** Chunks are embedded locally at upload (no per-request API cost) and
   searched with exact FAISS inner product; clause flags are computed once and stored; clause
   lookups by id are O(1).

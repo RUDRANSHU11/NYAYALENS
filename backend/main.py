@@ -6,6 +6,7 @@ Run it with:  uvicorn backend.main:app --reload
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,7 @@ from fastapi.responses import JSONResponse
 from backend import __version__, config
 from backend.api.routes import router
 from backend.document_processing.extract import DocumentError
+from backend.services import llm
 from backend.services.llm import LLMError
 
 logging.basicConfig(
@@ -29,7 +31,14 @@ DISCLAIMER = (
     "errors - consult a qualified legal professional before acting on anything here."
 )
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    await llm.aclose()  # release pooled connections to the model provider
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="NyayaLens API",
     version=__version__,
     summary="See the law clearly - GenAI legal document assistant.",

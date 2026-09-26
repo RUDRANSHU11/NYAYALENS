@@ -8,12 +8,13 @@ dependency-free hashing embedding so the app still works, with weaker recall.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import re
 import tempfile
 import threading
+import zlib
+from pathlib import Path
 
 import numpy as np
 
@@ -49,7 +50,13 @@ def _load() -> None:
             try:
                 from fastembed import TextEmbedding
 
-                _model = TextEmbedding(model_name=config.EMBEDDING_MODEL)
+                # scripts/fetch_model.py bakes the model in at build time, so a
+                # cold instance does not download ~70 MB before its first answer.
+                bundled = Path(__file__).resolve().parents[2] / ".model-cache"
+                _model = TextEmbedding(
+                    model_name=config.EMBEDDING_MODEL,
+                    cache_dir=str(bundled) if bundled.is_dir() else None,
+                )
                 _backend = "fastembed"
                 return
             except Exception as exc:  # noqa: BLE001 - any failure must stay non-fatal
@@ -77,8 +84,8 @@ def _hash_embed(texts: list[str]) -> np.ndarray:
     vectors = np.zeros((len(texts), _HASH_DIM), dtype="float32")
     for row, text in enumerate(texts):
         for token in _TOKEN.findall(text.lower()):
-            digest = hashlib.blake2b(token.encode(), digest_size=4).digest()
-            vectors[row, int.from_bytes(digest, "big") % _HASH_DIM] += 1.0
+            # crc32 is a C-speed checksum; this is a bucket index, never a digest.
+            vectors[row, zlib.crc32(token.encode()) % _HASH_DIM] += 1.0
     return _normalise(np.log1p(vectors))
 
 

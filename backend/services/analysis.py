@@ -7,7 +7,7 @@ the instructions.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+import asyncio
 
 from backend.document_processing.chunking import Chunk
 from backend.services import llm
@@ -30,14 +30,14 @@ _GUARDRAILS = (
 
 _MAX_CHANGE_CHARS = 600
 _MAX_CHANGES_EXPLAINED = 8
-_OCR_WORKERS = 4
+_OCR_CONCURRENCY = 4
 
 
 def language_name(language: str) -> str:
     return LANGUAGES.get(language, LANGUAGES["en"])
 
 
-def explain_clause(chunk: Chunk, language: str = "en") -> dict:
+async def explain_clause(chunk: Chunk, language: str = "en") -> dict:
     """Feature 1: plain-language explanation of one clause."""
     prompt = (
         f"Clause reference: {chunk.reference}\n"
@@ -49,7 +49,7 @@ def explain_clause(chunk: Chunk, language: str = "en") -> dict:
         '"watch_out": ["anything easy to miss"]}\n'
         "Use empty lists where the clause creates nothing of that kind."
     )
-    data = llm.complete_json(
+    data = await llm.complete_json(
         [{"role": "system", "content": _GUARDRAILS}, {"role": "user", "content": prompt}],
         max_tokens=700,
     )
@@ -63,7 +63,7 @@ def explain_clause(chunk: Chunk, language: str = "en") -> dict:
     }
 
 
-def answer_question(
+async def answer_question(
     question: str, contexts: list[tuple[Chunk, float]], language: str = "en"
 ) -> dict:
     """Features 4-5: answer from retrieved context, with citations back to clauses."""
@@ -79,7 +79,7 @@ def answer_question(
         '"citations": [numbers of the extracts you used], '
         '"found": true if the extract answers the question, false if it does not}'
     )
-    data = llm.complete_json(
+    data = await llm.complete_json(
         [{"role": "system", "content": _GUARDRAILS}, {"role": "user", "content": prompt}],
         max_tokens=800,
     )
@@ -102,7 +102,7 @@ def answer_question(
     }
 
 
-def explain_changes(changes: list[Change], language: str = "en") -> dict[str, str]:
+async def explain_changes(changes: list[Change], language: str = "en") -> dict[str, str]:
     """Feature 2: what the significant contract changes mean in practice."""
     significant = [change for change in changes if change.significant][:_MAX_CHANGES_EXPLAINED]
     if not significant:
@@ -120,7 +120,7 @@ def explain_changes(changes: list[Change], language: str = "en") -> dict[str, st
         f"<document_extract>\n{listed}\n</document_extract>\n\n"
         'Return JSON: {"impacts": [{"id": "the id in brackets", "impact": "one or two sentences"}]}'
     )
-    data = llm.complete_json(
+    data = await llm.complete_json(
         [{"role": "system", "content": _GUARDRAILS}, {"role": "user", "content": prompt}],
         max_tokens=900,
     )
@@ -132,28 +132,30 @@ def explain_changes(changes: list[Change], language: str = "en") -> dict[str, st
     return impacts
 
 
-def ocr_pages(images: list[bytes]) -> list[str]:
+async def ocr_pages(images: list[bytes]) -> list[str]:
     """Step 2 fallback: read scanned pages with the model's vision capability.
 
-    Pages are independent network calls, so they run concurrently (bounded, to
-    stay inside provider rate limits); ``map`` keeps them in page order.
+    Pages are independent round trips, so they run concurrently - bounded by a
+    semaphore to stay inside provider rate limits. ``gather`` keeps page order.
     """
+    if not images:
+        return []
+
     system = (
         "You are an OCR engine. Transcribe the text in the image exactly, preserving line "
         "breaks, clause numbers and headings. Output the text only, with no commentary."
     )
+    limit = asyncio.Semaphore(_OCR_CONCURRENCY)
 
-    def read(image: bytes) -> str:
+    async def read(image: bytes) -> str:
         content = [{"type": "text", "text": "Transcribe this page."}, llm.image_part(image)]
-        return llm.complete(
-            [{"role": "system", "content": system}, {"role": "user", "content": content}],
-            max_tokens=2000,
-        )
+        async with limit:
+            return await llm.complete(
+                [{"role": "system", "content": system}, {"role": "user", "content": content}],
+                max_tokens=2000,
+            )
 
-    if not images:
-        return []
-    with ThreadPoolExecutor(max_workers=min(_OCR_WORKERS, len(images))) as pool:
-        return list(pool.map(read, images))
+    return list(await asyncio.gather(*(read(image) for image in images)))
 
 
 def _string_list(value: object) -> list[str]:

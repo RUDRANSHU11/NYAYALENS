@@ -95,8 +95,13 @@ def add(
 
 def get(document_id: str) -> StoredDocument | None:
     with _lock:
-        _purge_expired()
-        return _documents.get(document_id)
+        document = _documents.get(document_id)
+        if document is None:
+            return None
+        if document.created_at < time.time() - config.DOC_TTL_SECONDS:
+            del _documents[document_id]  # expire just this one; add() sweeps the rest
+            return None
+        return document
 
 
 def delete(document_id: str) -> bool:

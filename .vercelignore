@@ -9,7 +9,8 @@ frontend/.next/
 .pytest_cache/
 *.tsbuildinfo
 
-# Not needed at runtime.
+# Not needed at runtime (the model also breaks the 500 MB function limit).
+.model-cache/
 .claude/
 tests/
 conftest.py

@@ -16,3 +16,4 @@ frontend/.env.local
 .env*
 !.env.example
 !.env.local.example
+.model-cache/

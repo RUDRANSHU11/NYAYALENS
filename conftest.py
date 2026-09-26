@@ -53,7 +53,7 @@ def ai(monkeypatch):
     """Stand in for the model provider. Returns the list of prompts it received."""
     prompts: list[str] = []
 
-    def fake_complete_json(messages, **_kwargs):
+    async def fake_complete_json(messages, **_kwargs):
         prompt = messages[-1]["content"]
         prompts.append(prompt)
         if '"impacts"' in prompt:
@@ -67,7 +67,7 @@ def ai(monkeypatch):
             "watch_out": ["Salary may be paid instead of notice"],
         }
 
-    def fake_complete(messages, **_kwargs):
+    async def fake_complete(messages, **_kwargs):
         prompts.append("ocr")
         return "1. SCANNED CLAUSE\nThe Employee shall give 30 days written notice."
 

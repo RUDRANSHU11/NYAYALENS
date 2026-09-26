@@ -221,3 +221,30 @@ tooling shipped to production.
 **Alternatives rejected.** Loading the embedding model eagerly at startup: on serverless every cold
 start would pay for it, including requests that never embed anything (compare, health). Streaming
 answers token by token: a real UX win, but a protocol change on both tiers for a hackathon build.
+
+---
+
+## 2026-09-26 — Async model I/O, and the model cached at build time
+
+**Decision.** Route handlers are `async def`; `services/llm.py` uses a pooled `httpx.AsyncClient`
+closed on shutdown; OCR pages and the two sides of a comparison run concurrently
+(`asyncio.gather`, OCR bounded by a semaphore); everything CPU-bound - extract, chunk, embed,
+compare, flag - is pushed through `run_in_threadpool`. `scripts/fetch_model.py` downloads the
+embedding model during the build, and `embeddings.py` uses that directory when it exists. Smaller
+items: `store.get` expires only the document asked for instead of sweeping all of them, comparison
+pairing tries `real_quick_ratio` before the costlier bounds, and the fallback embedder hashes with
+`crc32` instead of `blake2b`.
+
+**Why.** Earlier the whole request path was sync, so each model call held one of the threadpool's
+workers for its full duration, capping concurrency at the pool size for work that is almost
+entirely waiting. Async holds no thread while waiting, and the threadpool is reserved for work that
+genuinely burns CPU. A test asserts the overlap rather than assuming it: four slow model calls are
+in flight together. Baking in the model removes a ~70 MB download from every cold start.
+
+**Alternatives rejected.** *Streaming answers (SSE):* a real perceived-latency win, but it changes
+the protocol on both tiers and cannot be verified end to end without a live API key - a change that
+size should not ship unverified. *Shared Redis store:* fixes cold-start document loss and would let
+caches outlive an instance, but it means provisioning a third-party service on the user's account,
+which is their call, not ours. *Caching parsed documents by file hash:* would make re-uploads free,
+but it would keep a deleted document's text and vectors in memory after the user pressed "Remove
+document" - the privacy promise is worth more than the saved work.

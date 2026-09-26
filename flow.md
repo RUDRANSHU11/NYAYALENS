@@ -21,12 +21,12 @@ the same contract and reports what changed.
 |-------|--------|-------------------|
 | Frontend | Next.js 16 (Pages Router) + React 19 + TypeScript | two pages, no global state library |
 | Styling | Tailwind CSS 4 | utility classes, one small `@theme` block in `frontend/styles/globals.css` |
-| API | FastAPI + Pydantic | validation, OpenAPI docs, threadpool for blocking work |
+| API | FastAPI + Pydantic | validation, OpenAPI docs, async handlers + threadpool for CPU work |
 | PDF/DOCX | PyMuPDF, python-docx | text + page numbers, tables, heading styles |
 | Embeddings | fastembed (ONNX `bge-small-en-v1.5`) | local vectors, no API key; hashing fallback |
 | Vector index | FAISS `IndexFlatIP` | exact cosine search over one document |
 | LLM | any OpenAI-compatible endpoint (Gemini default) | explanations, answers, change impact, OCR |
-| Tests | pytest + FastAPI TestClient | 84 tests, no network |
+| Tests | pytest + FastAPI TestClient | 86 tests, no network |
 
 ---
 
@@ -57,6 +57,7 @@ nyayalens/
 │   ├── components/                 Layout, ClauseList, AskPanel, DiffText, FileField, Notice
 │   ├── services/api.ts             typed fetch client, all API types
 │   └── styles/globals.css          Tailwind import, theme tokens, focus/ins/del styles
+├── scripts/fetch_model.py          build-time download of the embedding model
 ├── data/                           two sample contract versions for demos and tests
 ├── tests/                          pytest suite (conftest.py is at the repo root)
 └── requirements.txt (runtime) / requirements-dev.txt (+ pytest) / .env.example
@@ -148,6 +149,9 @@ never builds its own.
 
 - **Routes stay thin.** Validate, call one service, shape a Pydantic model. Logic belongs in
   `services/` or `document_processing/`.
+- **Async for I/O, threadpool for CPU.** Handlers are `async def`; model calls are awaited;
+  anything CPU-bound (extract, chunk, embed, compare, flag) goes through `run_in_threadpool`.
+  Never call a blocking function directly inside a handler.
 - **Config through `backend/config.py`,** referenced as `config.NAME` (never `from config import
   NAME`) so tests can monkeypatch one limit.
 - **Deterministic first.** If a feature can be done with regex/difflib, do it there and use the
@@ -195,7 +199,7 @@ project's env vars to turn the AI features on. A cold instance downloads the emb
 **Works:** upload (PDF/DOCX/TXT), clause chunking with page/section/clause references, 14-category
 clause flagging, local embeddings + FAISS retrieval, grounded Q&A with citations, per-clause
 plain-language explanation (English/Hindi), two-version comparison with value and obligation
-changes, OCR for scanned PDFs, TTL + manual delete, rate limiting, 84 passing tests.
+changes, OCR for scanned PDFs, TTL + manual delete, rate limiting, 86 passing tests.
 
 **Stubbed / deliberate limits:** in-process store and rate limiter (single instance only);
 comparison pairing is capped at 40×40 clauses per changed block; OCR covers the first

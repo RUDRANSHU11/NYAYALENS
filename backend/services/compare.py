@@ -181,6 +181,9 @@ def _pair(olds: list[Chunk], news: list[Chunk]) -> list[Change]:
             if index in matched:
                 continue
             matcher = SequenceMatcher(None, old.text, new.text)
+            # Upper bounds, cheapest first: length only, then character counts.
+            if matcher.real_quick_ratio() < PAIR_THRESHOLD:
+                continue
             if matcher.quick_ratio() < PAIR_THRESHOLD:
                 continue
             ratio = matcher.ratio()

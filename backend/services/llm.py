@@ -3,16 +3,20 @@
 Gemini (default), OpenAI, Groq, OpenRouter and a local Ollama all speak this
 shape, so "configurable LLM provider" is three environment variables rather than
 an SDK per vendor. The API key never leaves the server.
+
+Calls are async: a model round trip takes seconds, and holding a worker thread
+for each one caps concurrency at the size of the threadpool. On the event loop
+the same process can have many requests in flight, all sharing one pooled
+connection.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
 import re
-import threading
-import time
 
 import httpx
 
@@ -23,8 +27,8 @@ log = logging.getLogger(__name__)
 _RETRY_STATUS = {429, 500, 502, 503, 504}
 _JSON_BLOCK = re.compile(r"\{.*\}|\[.*\]", re.DOTALL)
 
-_client: httpx.Client | None = None
-_lock = threading.Lock()
+_client: httpx.AsyncClient | None = None
+_lock = asyncio.Lock()
 
 
 class LLMError(RuntimeError):
@@ -43,16 +47,18 @@ def is_configured() -> bool:
     return bool(config.LLM_API_KEY)
 
 
-def reset() -> None:
-    """Drop the pooled client (used by tests after changing configuration)."""
+async def aclose() -> None:
+    """Close the pooled client. Called from the app's shutdown hook."""
     global _client
-    with _lock:
+    async with _lock:
         if _client is not None:
-            _client.close()
+            await _client.aclose()
         _client = None
 
 
-def complete(messages: list[dict], *, temperature: float = 0.2, max_tokens: int = 1200) -> str:
+async def complete(
+    messages: list[dict], *, temperature: float = 0.2, max_tokens: int = 1200
+) -> str:
     """Send a chat completion and return the assistant's text."""
     if not is_configured():
         raise LLMNotConfigured()
@@ -63,10 +69,11 @@ def complete(messages: list[dict], *, temperature: float = 0.2, max_tokens: int 
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    client = await _http()
 
     for attempt in range(2):
         try:
-            response = _http().post("/chat/completions", json=payload)
+            response = await client.post("/chat/completions", json=payload)
         except httpx.HTTPError as exc:
             log.warning("LLM request failed: %s", exc)
             if attempt:
@@ -74,7 +81,7 @@ def complete(messages: list[dict], *, temperature: float = 0.2, max_tokens: int 
             continue
 
         if response.status_code in _RETRY_STATUS and attempt == 0:
-            time.sleep(1)
+            await asyncio.sleep(1)
             continue
         if response.status_code >= 400:
             # Provider errors can quote the prompt back; log a short prefix only.
@@ -89,9 +96,9 @@ def complete(messages: list[dict], *, temperature: float = 0.2, max_tokens: int 
     raise LLMError()
 
 
-def complete_json(messages: list[dict], **kwargs) -> dict | list:
+async def complete_json(messages: list[dict], **kwargs) -> dict | list:
     """Send a chat completion whose prompt asks for JSON, and parse it."""
-    text = complete(messages, **kwargs).strip()
+    text = (await complete(messages, **kwargs)).strip()
     if text.startswith("```"):
         text = text.strip("`")
         text = text.split("\n", 1)[1] if "\n" in text else text
@@ -114,12 +121,12 @@ def image_part(png: bytes) -> dict:
     return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded}"}}
 
 
-def _http() -> httpx.Client:
+async def _http() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        with _lock:
+        async with _lock:
             if _client is None:
-                _client = httpx.Client(
+                _client = httpx.AsyncClient(
                     base_url=config.LLM_BASE_URL,
                     timeout=config.LLM_TIMEOUT,
                     headers={

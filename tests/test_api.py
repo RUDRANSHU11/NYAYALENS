@@ -126,6 +126,49 @@ def test_repeated_question_is_served_from_cache(client, contract_v1, ai):
     assert again == first
 
 
+def test_model_calls_overlap_instead_of_queueing(client, contract_v1, monkeypatch):
+    """The point of async handlers: four slow model calls are in flight at once."""
+    import asyncio
+
+    import httpx
+
+    from backend.main import app
+    from backend.services import llm
+
+    document_id = upload(client, contract_v1)["id"]
+    active = peak = 0
+
+    async def slow_model(_messages, **_kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.1)
+        active -= 1
+        return {"answer": "Thirty days.", "citations": [1], "found": True}
+
+    monkeypatch.setattr(llm, "is_configured", lambda: True)
+    monkeypatch.setattr(llm, "complete_json", slow_model)
+
+    async def ask_four_questions():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as async_client:
+            return await asyncio.gather(
+                *(
+                    async_client.post(
+                        f"/api/documents/{document_id}/ask",
+                        json={"question": f"question number {number} about notice?"},
+                    )
+                    for number in range(4)
+                )
+            )
+
+    responses = asyncio.run(ask_four_questions())
+
+    assert all(response.status_code == 200 for response in responses)
+    assert peak > 1  # a blocking client would have run these one after another
+
+
 def test_failed_answers_are_not_cached(client, contract_v1):
     document_id = upload(client, contract_v1)["id"]
     client.post(f"/api/documents/{document_id}/ask", json={"question": "Notice period?"})

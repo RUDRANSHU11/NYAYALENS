@@ -1,16 +1,19 @@
 """HTTP surface. Thin: validate, call a service, shape the response.
 
-Endpoints are plain ``def`` so FastAPI runs them in its worker threadpool - the
-work here is CPU-bound parsing and blocking HTTP to the model provider, which is
-exactly what that pool is for.
+Handlers are async so model round trips (seconds each) never hold a worker
+thread. The CPU-bound half - parsing, chunking, embedding, diffing - is pushed
+to the threadpool with ``run_in_threadpool`` so it never blocks the event loop.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+from functools import partial
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from backend import config
 from backend.document_processing import extract
@@ -43,7 +46,7 @@ _NO_AI_NOTICE = (
 
 
 @router.get("/health", response_model=HealthOut)
-def health() -> HealthOut:
+async def health() -> HealthOut:
     return HealthOut(
         status="ok",
         ai_enabled=llm.is_configured(),
@@ -55,24 +58,25 @@ def health() -> HealthOut:
 
 
 @router.post("/documents", response_model=DocumentOut, status_code=201)
-def upload_document(request: Request, file: UploadFile = File(...)) -> DocumentOut:
+async def upload_document(request: Request, file: UploadFile = File(...)) -> DocumentOut:
     """Steps 1-5: upload, extract, chunk, embed, store."""
     ratelimit.check(request)
     name = _safe_name(file.filename)
-    chunks, pages, ocr_used = _prepare(name, _read_upload(request, file))
-    document = store.add(
-        name=name, pages=pages, chunks=chunks, ocr_used=ocr_used, flags=clauses.flag(chunks)
+    chunks, pages, ocr_used = await _prepare(name, await _read_upload(request, file))
+    flags = await run_in_threadpool(clauses.flag, chunks)
+    document = await run_in_threadpool(
+        partial(store.add, name=name, pages=pages, chunks=chunks, ocr_used=ocr_used, flags=flags)
     )
     return _document_payload(document)
 
 
 @router.get("/documents/{document_id}", response_model=DocumentOut)
-def get_document(document_id: str) -> DocumentOut:
+async def get_document(document_id: str) -> DocumentOut:
     return _document_payload(_require(document_id))
 
 
 @router.delete("/documents/{document_id}", status_code=204)
-def delete_document(document_id: str) -> Response:
+async def delete_document(document_id: str) -> Response:
     """Let the user drop their document before the TTL does."""
     store.delete(document_id)
     return Response(status_code=204)
@@ -81,7 +85,7 @@ def delete_document(document_id: str) -> Response:
 @router.post(
     "/documents/{document_id}/clauses/{chunk_id}/explain", response_model=ExplanationOut
 )
-def explain_clause(
+async def explain_clause(
     request: Request, document_id: str, chunk_id: str, payload: LanguageRequest
 ) -> ExplanationOut:
     """Feature 1: plain-language explanation of one clause, cached per language."""
@@ -96,7 +100,7 @@ def explain_clause(
     cache_key = (chunk_id, payload.language)
     explanation = document.explanations.get(cache_key)
     if explanation is None:
-        explanation = analysis.explain_clause(chunk, payload.language)
+        explanation = await analysis.explain_clause(chunk, payload.language)
         document.explanations[cache_key] = explanation
 
     return ExplanationOut(
@@ -109,7 +113,7 @@ def explain_clause(
 
 
 @router.post("/documents/{document_id}/ask", response_model=AnswerOut)
-def ask_document(request: Request, document_id: str, payload: AskRequest) -> AnswerOut:
+async def ask_document(request: Request, document_id: str, payload: AskRequest) -> AnswerOut:
     """Features 4-5: retrieve relevant clauses, then answer from them with citations."""
     ratelimit.check(request)
     document = _require(document_id)
@@ -120,14 +124,16 @@ def ask_document(request: Request, document_id: str, payload: AskRequest) -> Ans
     if cached is not None:
         return cached
 
-    contexts = store.search(document, payload.question)
+    contexts = await run_in_threadpool(store.search, document, payload.question)
 
     answer, grounded, ai_used, notice, cited = "", False, False, None, []
     if not llm.is_configured():
         notice = _NO_AI_NOTICE
     else:
         try:
-            result = analysis.answer_question(payload.question, contexts, payload.language)
+            result = await analysis.answer_question(
+                payload.question, contexts, payload.language
+            )
             answer, grounded, cited, ai_used = (
                 result["answer"],
                 result["grounded"],
@@ -164,7 +170,7 @@ def ask_document(request: Request, document_id: str, payload: AskRequest) -> Ans
 
 
 @router.post("/compare", response_model=ComparisonOut)
-def compare_documents(
+async def compare_documents(
     request: Request,
     file_a: UploadFile = File(..., description="The older version"),
     file_b: UploadFile = File(..., description="The newer version"),
@@ -173,15 +179,17 @@ def compare_documents(
     """Feature 2: align two versions and report what changed."""
     ratelimit.check(request)
     name_a, name_b = _safe_name(file_a.filename), _safe_name(file_b.filename)
-    chunks_a, _, _ = _prepare(name_a, _read_upload(request, file_a))
-    chunks_b, _, _ = _prepare(name_b, _read_upload(request, file_b))
+    data_a, data_b = await _read_upload(request, file_a), await _read_upload(request, file_b)
+    (chunks_a, _, _), (chunks_b, _, _) = await asyncio.gather(
+        _prepare(name_a, data_a), _prepare(name_b, data_b)
+    )
 
-    result = compare_service.compare(chunks_a, chunks_b)
+    result = await run_in_threadpool(compare_service.compare, chunks_a, chunks_b)
 
     impacts: dict[str, str] = {}
     if llm.is_configured() and result.changes:
         try:
-            impacts = analysis.explain_changes(result.changes, language)
+            impacts = await analysis.explain_changes(result.changes, language)
         except llm.LLMError as exc:  # the diff itself is still worth returning
             log.warning("change explanation failed: %s", exc)
 
@@ -215,9 +223,9 @@ def compare_documents(
     )
 
 
-def _prepare(name: str, data: bytes) -> tuple[list[Chunk], int, bool]:
+async def _prepare(name: str, data: bytes) -> tuple[list[Chunk], int, bool]:
     """Bytes in, indexed-ready chunks out (steps 2-3, with OCR when needed)."""
-    extracted = extract.extract(name, data)
+    extracted = await run_in_threadpool(extract.extract, name, data)
     ocr_used = False
 
     if extracted.needs_ocr:
@@ -228,7 +236,7 @@ def _prepare(name: str, data: bytes) -> tuple[list[Chunk], int, bool]:
                 422,
             )
         lines: list[Line] = []
-        for number, text in enumerate(analysis.ocr_pages(extracted.page_images), start=1):
+        for number, text in enumerate(await analysis.ocr_pages(extracted.page_images), start=1):
             lines.extend(
                 Line(page=number, text=" ".join(raw.split()))
                 for raw in text.splitlines()
@@ -237,7 +245,7 @@ def _prepare(name: str, data: bytes) -> tuple[list[Chunk], int, bool]:
         extracted.lines = lines
         ocr_used = True
 
-    chunks = chunk_document(extracted.lines)
+    chunks = await run_in_threadpool(chunk_document, extracted.lines)
     if not chunks:
         raise DocumentError("No readable text was found in this document.", 422)
     return chunks, extracted.pages, ocr_used
@@ -280,14 +288,14 @@ def _require(document_id: str) -> store.StoredDocument:
     return document
 
 
-def _read_upload(request: Request, file: UploadFile) -> bytes:
+async def _read_upload(request: Request, file: UploadFile) -> bytes:
     """Read an upload, refusing anything over the limit before it is parsed."""
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > config.MAX_UPLOAD_BYTES * 2 + 8192:
         raise DocumentError("The upload is larger than the size limit.", 413)
 
-    data = file.file.read(config.MAX_UPLOAD_BYTES + 1)
-    file.file.close()
+    data = await file.read(config.MAX_UPLOAD_BYTES + 1)
+    await file.close()
     if len(data) > config.MAX_UPLOAD_BYTES:
         limit = config.MAX_UPLOAD_BYTES // (1024 * 1024)
         raise DocumentError(f"File is larger than the {limit} MB limit.", 413)
